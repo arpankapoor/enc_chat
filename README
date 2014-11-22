@@ -1,0 +1,19 @@
+A small, simple IRC-like chat, encrypted with AES (using PolarSSL)
+
+
+Compiling
+---------
+	$ make
+
+
+Usage
+-----
+Add users to the password file using
+	$ ./adduser <password FILE> <username> <password>
+
+Run the server, providing the port, AES-key and password file as arguments
+	$ ./server <port> <key> <password FILE>
+
+Connect to the server from multiple clients
+(Users should be added to the server password file in advanced)
+	$ ./client <host> <port> <key> <username> <password>
