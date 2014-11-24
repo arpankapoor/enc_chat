@@ -1,7 +1,7 @@
 CC = gcc -g
 CXX = g++ -g
 CFLAGS = -Wall -std=gnu11
-CXXFLAGS = -Wall -std=c++14
+CXXFLAGS = -Wall -std=c++11
 CSRCS = pssl_aes.c pssl_aesni.c pssl_net.c pssl_sha1.c
 COBJS = $(CSRCS:.c=.o)
 MAINS = client server adduser

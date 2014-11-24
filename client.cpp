@@ -59,7 +59,7 @@ main(int argc, char *argv[])
 			"Usage: %s <host> <port> <key> <username> <password>\n",
 			argv[0]);
 		fprintf(stderr,
-			"example: %s 3490 hex:0123456789ABCDEF0123456789ABCDEF abcd abcd\n",
+			"example: %s localhost 3490 hex:0123456789ABCDEF0123456789ABCDEF abcd abcd\n",
 			argv[0]);
 		goto exit;
 	} else {
