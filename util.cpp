@@ -56,7 +56,7 @@ encrypt_and_send(unsigned char *key, size_t keylen,
 	msglen++;
 
 	aes_init(&ctx);
-	aes_setkey_enc(&ctx, key, keylen);
+	aes_setkey_enc(&ctx, key, 8*keylen);	/* Convert keylen to bits */
 	while (sent < msglen) {
 		unsigned char in[16], out[16];
 
@@ -91,7 +91,7 @@ recv_and_decrypt(unsigned char *key, size_t keylen, int fd, string& msg)
 	unsigned char in[16], out[16];
 
 	aes_init(&ctx);
-	aes_setkey_dec(&ctx, key, keylen);
+	aes_setkey_dec(&ctx, key, 8*keylen);	/* Convert keylen to bits */
 
 	msg.clear();
 	/* Every message should be null-terminated */

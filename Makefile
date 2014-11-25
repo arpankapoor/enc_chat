@@ -1,21 +1,24 @@
 CC = gcc -g
 CXX = g++ -g
-CFLAGS = -Wall -std=gnu11
-CXXFLAGS = -Wall -std=c++11
-CSRCS = pssl_aes.c pssl_aesni.c pssl_net.c pssl_sha1.c
-COBJS = $(CSRCS:.c=.o)
+INC = -I./polarssl/include
+CFLAGS = -Wall -std=gnu11 $(INC)
+CXXFLAGS = -Wall -std=c++11 $(INC)
+DEPS = polarssl/library/*.o
 MAINS = client server adduser
 
 all: $(MAINS)
 
-server: server.o util.o $(COBJS)
+server: server.o util.o $(DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-client: client.o util.o $(COBJS)
+client: client.o util.o $(DEPS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-adduser: adduser.o pssl_sha1.o
+adduser: adduser.o $(DEPS)
 	$(CC) $(CFLAGS) -o $@ $^
+
+polarssl/library/*.o:
+	cd polarssl && $(MAKE) all && cd ..
 
 clean:
 	rm -f *.o $(MAINS)

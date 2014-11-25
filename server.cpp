@@ -8,6 +8,10 @@
 #include <iostream>
 #include <map>
 #include "polarssl/aes.h"
+#include "polarssl/ctr_drbg.h"
+#include "polarssl/dhm.h"
+#include "polarssl/entropy.h"
+#include "polarssl/error.h"
 #include "polarssl/net.h"
 #include "util.h"
 using namespace std;
@@ -69,20 +73,123 @@ authenticate(unsigned char *key, size_t keylen, int fd, string& username)
 		return it->second == pwd;
 }
 
+/*
+ * Send & receive the DH parameters to establish the key
+ * @return 0 on success, -1 on failure
+ */
 static int
-accept_and_auth(unsigned char *key, size_t keylen, int listener, string& username)
+exchange_key(int fd, unsigned char *key, size_t keylen)
 {
-	int newfd = -1, ret = -1;
+	size_t buflen = 128;		/* Use 1024-bit P */
+	unsigned char buf[buflen];
+
+	entropy_context entropy;
+	ctr_drbg_context ctr_drbg;
+	dhm_context dhm;
+
+	/* Diffie-Hellman init */
+	dhm_init(&dhm);
+
+	/* Seeding the random number generator */
+	entropy_init(&entropy);
+	if (ctr_drbg_init(&ctr_drbg, entropy_func,
+				&entropy, NULL, 0) != 0) {
+		fprintf(stderr, "ERROR: ctr_drbg_init\n");
+		return -1;
+	}
+
+	/* Set DHM modulus and generator */
+	if (mpi_read_string(&dhm.P, 16,
+			POLARSSL_DHM_RFC2409_MODP_1024_P) != 0
+		|| mpi_read_string(&dhm.G, 16,
+			POLARSSL_DHM_RFC2409_MODP_1024_G) != 0) {
+		fprintf(stderr, "ERROR: mpi_read_string\n");
+		return -1;
+	}
+
+	dhm.len = mpi_size(&dhm.P);
+
+	/* Setup the DH parameters & send to the client */
+	if (dhm_make_public(&dhm, (int)mpi_size(&dhm.P), buf, buflen,
+				ctr_drbg_random, &ctr_drbg) != 0) {
+		fprintf(stderr, "ERROR: dhm_make_public\n");
+		return -1;
+	}
+
+	if (net_send(&fd, buf, buflen) != (int)buflen) {
+		fprintf(stderr, "ERROR: send\n");
+		return -1;
+	}
+
+	memset(buf, 0, sizeof(buf));
+
+	/* Get client's public parameters */
+	if (net_recv(&fd, buf, buflen) != (int)buflen) {
+		fprintf(stderr, "ERROR: recv\n");
+		return -1;
+	}
+
+	if (dhm_read_public(&dhm, buf, dhm.len) != 0) {
+		fprintf(stderr, "ERROR: dhm_read_public\n");
+		return -1;
+	}
+
+	memset(buf, 0, sizeof(buf));
+
+	if (dhm_calc_secret(&dhm, buf, &buflen,
+			ctr_drbg_random, &ctr_drbg) != 0) {
+		fprintf(stderr, "ERROR: dhm_calc_secret\n");
+		return -1;
+	}
+
+	/* Copy the required keylength */
+	memcpy(key, buf, keylen);
+
+	dhm_free(&dhm);
+	ctr_drbg_free(&ctr_drbg);
+	entropy_free(&entropy);
+
+	return 0;
+}
+
+/*
+ * 1) Accept an incoming connection from a client
+ * 2) Exchange AES-256 keys with the client
+ * 3) Receive the username and password of the client
+ * 4) Close the connection if any error occurs
+ */
+static int
+accept_and_auth(int listener, string& username,
+		unsigned char *key, size_t keylen)
+{
+	int newfd = -1;
+	int ret = -1;
 	char host[NI_MAXHOST], service[NI_MAXSERV];
+
 	struct sockaddr_storage client_addr;
 	socklen_t addr_len = sizeof(client_addr);
 
 	if (net_accept(listener, &newfd, NULL) != 0) {
 		fprintf(stderr, "ERROR: accept\n");
 	} else {
-		getpeername(newfd, (struct sockaddr *)&client_addr, &addr_len);
-		getnameinfo((struct sockaddr *)&client_addr, addr_len, host,
-			NI_MAXHOST, service, NI_MAXSERV,NI_NUMERICSERV);
+		memset(key, 0, keylen);
+		if (exchange_key(newfd, key, keylen) != 0) {
+			fprintf(stderr, "Key exchange failed\n");
+			goto err;
+		}
+
+		if (getpeername(newfd, (struct sockaddr *)&client_addr,
+				&addr_len) != 0) {
+			perror("getpeername");
+			goto err;
+		}
+
+		if (getnameinfo((struct sockaddr *)&client_addr, addr_len,
+				host, NI_MAXHOST, service, NI_MAXSERV,
+				NI_NUMERICSERV) != 0) {
+			perror("getnameinfo");
+			goto err;
+		}
 
 		if (authenticate(key, keylen, newfd, username)) {
 			ret = 0;		/* Success */
@@ -93,6 +200,7 @@ accept_and_auth(unsigned char *key, size_t keylen, int listener, string& usernam
 		}
 	}
 
+err:
 	if (ret == -1) {
 		net_close(newfd);
 		newfd = -1;
@@ -106,40 +214,36 @@ accept_and_auth(unsigned char *key, size_t keylen, int listener, string& usernam
 int
 main(int argc, char *argv[])
 {
-	int port, listener, newfd, fdmax, fd, msglen;
+	int port, newfd, fdmax, fd, msglen;
+	int listener = -1;
 	int ret = EXIT_FAILURE;
-	size_t keylen;
-	char *arg_port, *arg_key, *arg_pwd_file;
-	unsigned char key[64];
+	char *arg_port, *arg_pwd_file;
+	const size_t keylen = 32;	/* 256 bits */
+	unsigned char key[keylen];
+	unsigned char *nkey;
+
 	fd_set master, read_fds;
 	string username, msg;
 	vector <int> trash;
 
-	/* File descriptor => Username */
-	map <int, string> fd_usr;
+	/* File descriptor => key, username */
+	map <int, pair <unsigned char *, string> > fd_usr;
 
-	if (argc != 4) {
+	if (argc != 3) {
 		fprintf(stderr,
-			"Usage: %s <port> <key> <password FILE>\n",
+			"Usage: %s <port> <password FILE>\n",
 			argv[0]);
 
 		fprintf(stderr,
-			"example: %s 3490 hex:0123456789ABCDEF0123456789ABCDEF shadow\n",
+			"example: %s 3490 shadow\n",
 			argv[0]);
 		goto exit;
 	} else {
 		arg_port = argv[1];
-		arg_key = argv[2];
-		arg_pwd_file = argv[3];
+		arg_pwd_file = argv[2];
 	}
 
 	port = atoi(arg_port);
-
-	/* Read secret key */
-	read_key(arg_key, key, sizeof(key), &keylen);
-
-	/* Clean the command line */
-	memset(arg_key, 0, strlen(arg_key));
 
 	/* Initialize the password map */
 	if (pwd_init(arg_pwd_file) == -1) {
@@ -171,26 +275,35 @@ main(int argc, char *argv[])
 		}
 
 		if (FD_ISSET(listener, &read_fds)) {	/* New connection */
-			newfd = accept_and_auth(key, keylen, listener, username);
+			newfd = accept_and_auth(listener, username, key, keylen);
 			if (newfd != -1) {
 				/* Add to master set */
 				FD_SET(newfd, &master);
 				if (newfd > fdmax)
 					fdmax = newfd;
 
+				nkey = (unsigned char *)calloc(1, keylen);
+				if (nkey == NULL) {
+					fprintf(stderr, "Memory error\n");
+					goto exit;
+				}
+
+				memcpy(nkey, key, keylen);
+
 				/* Add to the map */
-				fd_usr[newfd] = username;
+				fd_usr[newfd] = make_pair(nkey, username);
 			}
 		}
 
 		/* Handle data from a client */
 		for (auto it: fd_usr) {
 			fd = it.first;
-			username = it.second;
+			nkey = it.second.first;
+			username = it.second.second;
 			if (!FD_ISSET(fd, &read_fds))
 				continue;
 
-			msglen = recv_and_decrypt(key, keylen, fd, msg);
+			msglen = recv_and_decrypt(nkey, keylen, fd, msg);
 			if (msglen == 0) {
 				/* Connection closed */
 				cout << username << ", quitting.";
@@ -207,25 +320,30 @@ main(int argc, char *argv[])
 				/* Send to ALL */
 				for (auto x: fd_usr) {
 					int fdnew = x.first;
+					unsigned char *nnkey = x.second.first;
 					if (fdnew == fd)
 						continue;
 					if (find(trash.begin(), trash.end(),
 							fdnew) != trash.end())
 						continue;
 
-					encrypt_and_send(key, keylen, fdnew,
+					encrypt_and_send(nnkey, keylen, fdnew,
 							msg.c_str(), msg.size());
 				}
 			}
 		}
 
-		for (auto x: trash)
+		for (auto x: trash) {
+			free(fd_usr[x].first);
 			fd_usr.erase(x);
+		}
 		trash.clear();
 	}
 
 	ret = EXIT_SUCCESS;
 exit:
-	net_close(listener);
+	if (listener != -1)
+		net_close(listener);
+
 	return ret;
 }
