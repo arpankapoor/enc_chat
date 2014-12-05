@@ -130,7 +130,8 @@ authenticate(unsigned char *key, size_t keylen, int fd,
 int
 main(int argc, char *argv[])
 {
-	int port, fd, fdmax, msglen;
+	int fd = -1;
+	int port, fdmax, msglen;
 	int ret = EXIT_FAILURE;
 	const size_t keylen = 32;
 	size_t pwdlen;
@@ -216,6 +217,7 @@ main(int argc, char *argv[])
 
 	ret = EXIT_SUCCESS;
 exit:
-	net_close(fd);
+	if (fd != -1)
+		net_close(fd);
 	return ret;
 }
