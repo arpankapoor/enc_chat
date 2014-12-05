@@ -2,43 +2,10 @@
 #include <cstring>
 #include <string>
 #include <iostream>
-#include "polarssl/aes.h"
-#include "polarssl/net.h"
+#include <polarssl/aes.h>
+#include <polarssl/net.h>
 #include "util.h"
 using namespace std;
-
-/* Read the key for AES */
-void
-read_key(const char *arg_key, unsigned char *key,
-		size_t keysize, size_t *keylen)
-{
-	FILE *fkey;
-	if ((fkey = fopen(arg_key, "rb")) != NULL) {
-		*keylen = fread(key, 1, keysize, fkey);
-		fclose(fkey);
-	} else {
-		if (memcmp(arg_key, "hex:", 4) == 0) {
-			int n;
-			char *p = (char *)&arg_key[4];
-			*keylen = 0;
-
-			while (sscanf(p, "%02X", &n) > 0 &&
-					*keylen < keysize) {
-				key[(*keylen)++] = (unsigned char) n;
-				p += 2;
-			}
-		} else {
-			*keylen = strlen(arg_key);
-
-			if (*keylen > keysize)
-				*keylen = keysize;
-
-			memcpy(key, arg_key, *keylen);
-		}
-	}
-
-	*keylen = 8 * (*keylen);
-}
 
 /*
  * Encrypt given message and send to the server

@@ -1,17 +1,18 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <strings.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <iostream>
 #include <string>
-#include "polarssl/aes.h"
-#include "polarssl/ctr_drbg.h"
-#include "polarssl/dhm.h"
-#include "polarssl/entropy.h"
-#include "polarssl/net.h"
-#include "polarssl/sha1.h"
+#include <polarssl/aes.h>
+#include <polarssl/ctr_drbg.h>
+#include <polarssl/dhm.h>
+#include <polarssl/entropy.h>
+#include <polarssl/net.h>
+#include <polarssl/sha1.h>
 #include "util.h"
 using namespace std;
 
@@ -203,6 +204,11 @@ main(int argc, char *argv[])
 		if (FD_ISSET(fileno(stdin), &read_fds)) {
 			msg.clear();
 			getline(cin, msg);
+			const char *p = msg.c_str();
+			if (strncasecmp(p, "exit", 4) == 0
+					|| strncasecmp(p, "quit", 4) == 0)
+				break;
+
 			encrypt_and_send(key, keylen, fd,
 					msg.c_str(), msg.length());
 		}

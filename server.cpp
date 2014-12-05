@@ -7,12 +7,12 @@
 #include <fstream>
 #include <iostream>
 #include <map>
-#include "polarssl/aes.h"
-#include "polarssl/ctr_drbg.h"
-#include "polarssl/dhm.h"
-#include "polarssl/entropy.h"
-#include "polarssl/error.h"
-#include "polarssl/net.h"
+#include <polarssl/aes.h>
+#include <polarssl/ctr_drbg.h>
+#include <polarssl/dhm.h>
+#include <polarssl/entropy.h>
+#include <polarssl/error.h>
+#include <polarssl/net.h>
 #include "util.h"
 using namespace std;
 
@@ -290,6 +290,17 @@ main(int argc, char *argv[])
 
 				memcpy(nkey, key, keylen);
 
+				msg = username + ", joining.";
+
+				/* Send to ALL */
+				for (auto x: fd_usr) {
+					int fdnew = x.first;
+					unsigned char *nnkey = x.second.first;
+
+					encrypt_and_send(nnkey, keylen, fdnew,
+							msg.c_str(), msg.size());
+				}
+
 				/* Add to the map */
 				fd_usr[newfd] = make_pair(nkey, username);
 			}
@@ -306,8 +317,7 @@ main(int argc, char *argv[])
 			msglen = recv_and_decrypt(nkey, keylen, fd, msg);
 			if (msglen == 0) {
 				/* Connection closed */
-				cout << username << ", quitting.";
-				cout << endl;
+				msg = username + ", quitting.";
 
 				net_close(fd);
 				FD_CLR(fd, &master);
@@ -315,21 +325,22 @@ main(int argc, char *argv[])
 				trash.push_back(fd);
 			} else {
 				msg = username + ": " + msg;
-				cout << msg << endl;
+			}
 
-				/* Send to ALL */
-				for (auto x: fd_usr) {
-					int fdnew = x.first;
-					unsigned char *nnkey = x.second.first;
-					if (fdnew == fd)
-						continue;
-					if (find(trash.begin(), trash.end(),
-							fdnew) != trash.end())
-						continue;
+			cout << msg << endl;
 
-					encrypt_and_send(nnkey, keylen, fdnew,
-							msg.c_str(), msg.size());
-				}
+			/* Send to ALL */
+			for (auto x: fd_usr) {
+				int fdnew = x.first;
+				unsigned char *nnkey = x.second.first;
+				if (fdnew == fd)
+					continue;
+				if (find(trash.begin(), trash.end(),
+						fdnew) != trash.end())
+					continue;
+
+				encrypt_and_send(nnkey, keylen, fdnew,
+						msg.c_str(), msg.size());
 			}
 		}
 
