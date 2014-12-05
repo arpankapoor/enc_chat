@@ -1,4 +1,13 @@
-A small, simple IRC-like chat, encrypted with AES (using PolarSSL)
+A small, simple IRC-like chat, encrypted with AES-256 with
+Diffie-Hellman-Merkle for key exchange.
+
+
+Dependency
+----------
+polarssl
+(Ubuntu -> libpolarssl-dev
+ Fedora -> polarssl-devel
+ Arch Linux -> polarssl)
 
 
 Compiling
@@ -11,9 +20,9 @@ Usage
 Add users to the password file using
 	$ ./adduser <password FILE> <username> <password>
 
-Run the server, providing the port, AES-key and password file as arguments
-	$ ./server <port> <key> <password FILE>
+Run the server, providing the port and password file as arguments
+	$ ./server <port> <password FILE>
 
 Connect to the server from multiple clients
 (Users should be added to the server password file in advanced)
-	$ ./client <host> <port> <key> <username> <password>
+	$ ./client <host> <port> <username> <password>

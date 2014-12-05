@@ -1,24 +1,20 @@
 CC = gcc -g
 CXX = g++ -g
-INC = -I./polarssl/include
-CFLAGS = -Wall -std=gnu11 $(INC)
-CXXFLAGS = -Wall -std=c++11 $(INC)
-DEPS = polarssl/library/*.o
+LIB = -lpolarssl
+CFLAGS = -Wall -std=gnu11 $(LIB)
+CXXFLAGS = -Wall -std=c++11 $(LIB)
 MAINS = client server adduser
 
 all: $(MAINS)
 
-server: server.o util.o $(DEPS)
+server: server.o util.o
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-client: client.o util.o $(DEPS)
+client: client.o util.o
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-adduser: adduser.o $(DEPS)
+adduser: adduser.o
 	$(CC) $(CFLAGS) -o $@ $^
-
-polarssl/library/*.o:
-	cd polarssl && $(MAKE) all && cd ..
 
 clean:
 	rm -f *.o $(MAINS)
